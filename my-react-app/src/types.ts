@@ -1,18 +1,26 @@
-// 单个笔迹点的结构
+// 新增：模式类型
+export type DrawMode = 'draw' | 'erase';
+
+// 新增：单条笔迹（含ID、轨迹、配置）
+export interface SingleStroke {
+  id: string; // 唯一ID（如uuid）
+  points: DrawPoint[]; // 轨迹点
+  config: PenConfig; // 笔迹配置（粗细/颜色）
+}
+
+// 原有类型保留，新增上述2个类型
 export interface DrawPoint {
-  x: number; // 横坐标
-  y: number; // 纵坐标
-  time: number; // 时间戳（用于平滑处理）
+  x: number;
+  y: number;
+  time: number;
 }
 
-// 笔迹配置
 export interface PenConfig {
-  lineWidth: number; // 粗细（px）
-  strokeStyle: string; // 颜色（十六进制/rgb）
-  lineCap: CanvasLineCap; // 笔触圆角（保证平滑）
+  lineWidth: number;
+  strokeStyle: string;
+  lineCap: CanvasLineCap;
 }
 
-// 绘制上下文（封装Canvas相关）
 export interface DrawContext {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;

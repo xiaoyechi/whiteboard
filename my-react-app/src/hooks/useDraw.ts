@@ -1,19 +1,23 @@
 import { useState, useRef, useCallback } from 'react';
-import { DrawPoint, PenConfig, DrawContext } from '../types';
+import { v4 as uuidv4 } from 'uuid'; // 需安装：npm i uuid @types/uuid
+import { DrawPoint, PenConfig, DrawContext, DrawMode, SingleStroke } from '../types';
 import { initDrawContext, smoothPoints, drawPath } from '../utils/draw-utils';
+import { isPointInStroke, redrawAllStrokes } from '../utils/erase-utils';
 
 export const useDraw = () => {
-  // 笔迹配置状态
+  // 原有配置状态
   const [penConfig, setPenConfig] = useState<PenConfig>({
     lineWidth: 5,
     strokeStyle: '#000000',
     lineCap: 'round',
   });
-  // 绘制上下文
+  // 新增：模式状态（默认绘制）
+  const [drawMode, setDrawMode] = useState<DrawMode>('draw');
+  // 新增：笔迹历史（存储所有绘制的笔迹）
+  const strokesRef = useRef<SingleStroke[]>([]);
+  // 原有引用
   const drawContextRef = useRef<DrawContext>({ canvas: null, ctx: null });
-  // 触摸轨迹缓存
   const pointsRef = useRef<DrawPoint[]>([]);
-  // 标记是否正在绘制（鼠标按下状态）
   const isDrawingRef = useRef<boolean>(false);
 
   // 初始化Canvas
@@ -21,65 +25,103 @@ export const useDraw = () => {
     drawContextRef.current = initDrawContext(canvas);
   }, []);
 
-  // 鼠标按下：开始绘制
+  // 新增：切换模式
+  const switchDrawMode = useCallback((mode: DrawMode) => {
+    setDrawMode(mode);
+    isDrawingRef.current = false; // 切换模式时停止绘制/擦除
+    pointsRef.current = [];
+  }, []);
+
+  // 鼠标按下：区分绘制/擦除模式
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const { ctx } = drawContextRef.current;
     if (!ctx) return;
-    // 标记为绘制中
+
     isDrawingRef.current = true;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    // 计算相对Canvas的坐标（鼠标坐标）
+
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     pointsRef.current = [{ x, y, time: Date.now() }];
-    // 开始绘制起点
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }, []);
 
-  // 鼠标移动：绘制轨迹
+    // 绘制模式：初始化新笔迹起点
+    if (drawMode === 'draw') {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
+  }, [drawMode]);
+
+  // 鼠标移动：区分绘制/擦除逻辑
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    // 仅在鼠标按下时绘制
     if (!isDrawingRef.current) return;
+
     const { ctx } = drawContextRef.current;
     if (!ctx) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    // 缓存轨迹点
-    pointsRef.current.push({ x, y, time: Date.now() });
-    // 平滑处理后绘制
-    const smoothPts = smoothPoints(pointsRef.current);
-    // 每次绘制前重新应用配置
-    ctx.lineWidth = penConfig.lineWidth;
-    ctx.strokeStyle = penConfig.strokeStyle;
-    ctx.lineCap = penConfig.lineCap;
-    
-    drawPath(ctx, smoothPts, penConfig);
-  }, [penConfig]);
 
-  // 鼠标松开/移出：结束绘制
+    // 1. 绘制模式：新增轨迹并实时绘制
+    if (drawMode === 'draw') {
+      pointsRef.current.push({ x, y, time: Date.now() });
+      const smoothPts = smoothPoints(pointsRef.current);
+      drawPath(ctx, smoothPts, penConfig);
+    }
+
+    // 2. 擦除模式：检测碰撞并移除笔迹
+    if (drawMode === 'erase') {
+      // 找到包含当前坐标的笔迹ID
+      const strokeToRemove = strokesRef.current.find((stroke) =>
+        isPointInStroke(x, y, stroke)
+      );
+      if (strokeToRemove) {
+        // 过滤掉要擦除的笔迹
+        strokesRef.current = strokesRef.current.filter(
+          (s) => s.id !== strokeToRemove.id
+        );
+        // 重绘所有剩余笔迹
+        redrawAllStrokes(ctx, strokesRef.current);
+      }
+    }
+  }, [drawMode, penConfig]);
+
+  // 鼠标松开：绘制模式下保存笔迹到历史
   const handleMouseUp = useCallback(() => {
+    if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
-    pointsRef.current = [];
-  }, []);
 
+    // 绘制模式：保存当前轨迹为一条新笔迹
+    if (drawMode === 'draw' && pointsRef.current.length > 1) {
+      const newStroke: SingleStroke = {
+        id: uuidv4(),
+        points: [...pointsRef.current],
+        config: { ...penConfig },
+      };
+      strokesRef.current.push(newStroke);
+    }
+
+    pointsRef.current = [];
+  }, [drawMode, penConfig]);
+
+  // 鼠标移出：重置状态
   const handleMouseLeave = useCallback(() => {
-    // 鼠标移出画布时强制结束绘制（避免异常）
     isDrawingRef.current = false;
     pointsRef.current = [];
   }, []);
 
-  // 修改笔迹配置
+  // 原有：更新笔迹配置
   const updatePenConfig = useCallback((config: Partial<PenConfig>) => {
-    setPenConfig(prev => ({ ...prev, ...config }));
+    setPenConfig((prev) => ({ ...prev, ...config }));
   }, []);
 
   return {
     penConfig,
+    drawMode, // 暴露模式状态
     initCanvas,
+    switchDrawMode, // 暴露模式切换方法
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,

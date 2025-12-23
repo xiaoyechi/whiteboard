@@ -1,12 +1,12 @@
-import { PenConfig as IPenConfig } from '../types'; // 导入类型
+// src/components/PenConfig.tsx
+import { PenConfig as IPenConfig } from '../types';
 
-// 定义 Props 类型：接收配置和修改方法
+// 定义 PenConfig 的 Props 类型
 interface PenConfigProps {
   penConfig: IPenConfig;
   updatePenConfig: (config: Partial<IPenConfig>) => void;
 }
 
-// 接收 props，不再调用 useDraw()
 export const PenConfig = ({ penConfig, updatePenConfig }: PenConfigProps) => {
   // 调整粗细
   const handleLineWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -19,7 +19,7 @@ export const PenConfig = ({ penConfig, updatePenConfig }: PenConfigProps) => {
   };
 
   return (
-    <div style={{ margin: '10px 0', display: 'flex', gap: '20px', alignItems: 'center' }}>
+    <div style={{ margin: '10px 0 0 20px', display: 'flex', gap: '20px', alignItems: 'center' }}>
       <div>
         <label>笔迹粗细：</label>
         <input
