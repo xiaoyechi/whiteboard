@@ -1,20 +1,28 @@
 import { useRef, useEffect } from 'react';
-import { useDraw } from '../hooks/useDraw';
+import { DrawContext } from '../types'; // 导入类型
 
+// 定义 Props 类型
 interface DrawBoardProps {
   width?: string;
   height?: string;
+  initCanvas: (canvas: HTMLCanvasElement) => void;
+  handleMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
+  handleMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => void;
+  handleMouseUp: () => void;
+  handleMouseLeave: () => void;
 }
 
-export const DrawBoard = ({ width = '100%', height = '80vh' }: DrawBoardProps) => {
+// 接收 props，不再调用 useDraw()
+export const DrawBoard = ({
+  width = '100%',
+  height = '80vh',
+  initCanvas,
+  handleMouseDown,
+  handleMouseMove,
+  handleMouseUp,
+  handleMouseLeave,
+}: DrawBoardProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const {
-    initCanvas,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
-    handleMouseLeave,
-  } = useDraw();
 
   // 初始化Canvas
   useEffect(() => {
@@ -30,14 +38,13 @@ export const DrawBoard = ({ width = '100%', height = '80vh' }: DrawBoardProps) =
         width,
         height,
         border: '1px solid #ccc',
-        touchAction: 'none', // 兼容移动端，PC端无影响
-        cursor: 'crosshair', // 鼠标样式改为十字准星，提升体验
+        touchAction: 'none',
+        cursor: 'crosshair',
       }}
-      onMouseDown={handleMouseDown}   // 鼠标按下
-      onMouseMove={handleMouseMove}   // 鼠标移动
-      onMouseUp={handleMouseUp}       // 鼠标松开（画布内）
-      onMouseLeave={handleMouseLeave} // 鼠标移出画布
-      // 补充：监听全局鼠标松开（避免鼠标在画布外松开导致绘制未停止）
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onMouseUpCapture={handleMouseUp}
     />
   );

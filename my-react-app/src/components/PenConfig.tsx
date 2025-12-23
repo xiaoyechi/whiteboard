@@ -1,19 +1,20 @@
-import { useDraw } from '../hooks/useDraw';
+import { PenConfig as IPenConfig } from '../types'; // 导入类型
 
-export const PenConfig = () => {
-  const { penConfig, updatePenConfig } = useDraw();
+// 定义 Props 类型：接收配置和修改方法
+interface PenConfigProps {
+  penConfig: IPenConfig;
+  updatePenConfig: (config: Partial<IPenConfig>) => void;
+}
 
+// 接收 props，不再调用 useDraw()
+export const PenConfig = ({ penConfig, updatePenConfig }: PenConfigProps) => {
   // 调整粗细
   const handleLineWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newWidth = Number(e.target.value);
-    console.log(`笔迹粗细调整为: ${newWidth}px`);
     updatePenConfig({ lineWidth: Number(e.target.value) });
   };
 
   // 调整颜色
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newColor = e.target.value;
-    console.log(`笔迹颜色调整为: ${newColor}`);
     updatePenConfig({ strokeStyle: e.target.value });
   };
 
