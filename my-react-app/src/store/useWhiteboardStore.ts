@@ -61,7 +61,7 @@ interface WhiteboardStore {
   clearCanvas: () => void;
 }
 
-const STORAGE_KEY = 'sewoo-whiteboard-history';
+const STORAGE_KEY = 'seyou-whiteboard-history';
 
 const defaultCanvasState: CanvasState = {
   strokes: [],

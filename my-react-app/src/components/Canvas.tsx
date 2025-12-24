@@ -81,6 +81,8 @@ export function Canvas() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [isMovingSelection, setIsMovingSelection] = useState(false);
+  const [mousePosition, setMousePosition] = useState<Point | null>(null);
+  const [renderKey, setRenderKey] = useState(0);
   const lastPanPoint = useRef<Point | null>(null);
   const lastMovePoint = useRef<Point | null>(null);
   
@@ -188,6 +190,9 @@ export function Canvas() {
     const point = getCanvasPoint(e);
     const transformedPoint = getTransformedPoint(point);
     
+    // 更新鼠标位置（用于橡皮擦预览）
+    setMousePosition(point);
+    
     if (isMovingSelection && lastMovePoint.current) {
       const dx = point.x - lastMovePoint.current.x;
       const dy = point.y - lastMovePoint.current.y;
@@ -248,6 +253,12 @@ export function Canvas() {
     lastPanPoint.current = null;
   }, [isDrawing, isPanning, isMovingSelection, currentTool, endStroke, endLasso]);
 
+  // Handle mouse leave
+  const handleMouseLeave = useCallback(() => {
+    handleMouseUp();
+    setMousePosition(null);
+  }, [handleMouseUp]);
+
   // Handle wheel for zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -278,20 +289,33 @@ export function Canvas() {
       const dpr = window.devicePixelRatio || 1;
       const rect = container.getBoundingClientRect();
       
+      // 设置新尺寸
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
       
+      // 重新获取 context 并设置 DPR 缩放
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.scale(dpr, dpr);
       }
+      
+      // 强制触发重新渲染
+      requestAnimationFrame(() => {
+        setRenderKey(prev => prev + 1);
+      });
     });
     
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
   }, []);
+
+  // 当工具切换时，确保画布重新渲染
+  useEffect(() => {
+    // 强制触发重新渲染
+    setRenderKey(prev => prev + 1);
+  }, [currentTool]);
 
   // Render canvas
   useEffect(() => {
@@ -302,6 +326,17 @@ export function Canvas() {
     if (!ctx) return;
     
     const dpr = window.devicePixelRatio || 1;
+    // 确保画布有有效的尺寸
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      // 如果画布尺寸为 0，等待下一帧再渲染
+      requestAnimationFrame(() => {
+        // 重新触发渲染
+        setRenderKey(prev => prev + 1);
+      });
+      return;
+    }
+    
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
     
@@ -412,12 +447,35 @@ export function Canvas() {
       ctx.restore();
     }
     
-    // Draw eraser cursor preview
-    if (currentTool === 'eraser') {
-      // Will be handled by CSS custom cursor
+    // Draw eraser cursor preview (in screen coordinates)
+    if (currentTool === 'eraser' && mousePosition) {
+      ctx.save();
+      const radius = toolSettings.eraserWidth;
+      
+      // 绘制外圈（红色边框）
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(mousePosition.x, mousePosition.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // 绘制内圈（半透明填充）
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+      ctx.beginPath();
+      ctx.arc(mousePosition.x, mousePosition.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 绘制中心点
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(mousePosition.x, mousePosition.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
     }
     
-  }, [canvasState, currentStroke, viewState, lassoPoints, currentTool]);
+  }, [canvasState, currentStroke, viewState, lassoPoints, currentTool, mousePosition, toolSettings.eraserWidth, renderKey]);
 
   // Get cursor style
   const getCursorStyle = () => {
@@ -425,7 +483,7 @@ export function Canvas() {
       case 'pan':
         return isPanning ? 'grabbing' : 'grab';
       case 'eraser':
-        return 'none';
+        return 'none'; // 使用自定义绘制的光标
       case 'lasso':
         return 'crosshair';
       default:
@@ -444,18 +502,9 @@ export function Canvas() {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
       />
-      {currentTool === 'eraser' && (
-        <div 
-          className="eraser-cursor"
-          style={{
-            width: toolSettings.eraserWidth * 2,
-            height: toolSettings.eraserWidth * 2,
-          }}
-        />
-      )}
     </div>
   );
 }

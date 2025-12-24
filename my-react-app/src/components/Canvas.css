@@ -13,13 +13,5 @@
   touch-action: none;
 }
 
-.eraser-cursor {
-  position: fixed;
-  pointer-events: none;
-  border: 2px solid #6366f1;
-  border-radius: 50%;
-  background: rgba(99, 102, 241, 0.1);
-  transform: translate(-50%, -50%);
-  z-index: 1000;
-}
+/* 橡皮擦光标现在在 Canvas 上直接绘制，不再需要单独的 DOM 元素 */
 

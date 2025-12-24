@@ -28,7 +28,7 @@ export function Header({ onOpenHistory }: HeaderProps) {
       <div className="header-brand">
         <div className="logo">
           <span className="logo-icon">🎨</span>
-          <span className="logo-text">Sewoo 白板</span>
+          <span className="logo-text">seyou白板</span>
         </div>
         {currentRecordId && (
           <span className="header-status">已保存</span>
