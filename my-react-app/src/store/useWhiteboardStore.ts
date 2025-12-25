@@ -155,12 +155,24 @@ export const useWhiteboardStore = create<WhiteboardStore>((set, get) => ({
       x: (point.x - offsetX) / scale,
       y: (point.y - offsetY) / scale,
     };
+    const canvasRadius = radius / scale;
     
     let modified = false;
     const newStrokes: Stroke[] = [];
     
+    // 优化：使用边界框快速筛选，只处理可能与橡皮擦相交的笔触
     for (const stroke of canvasState.strokes) {
-      const splitResult = splitStrokeAtPoint(stroke, canvasPoint, radius / scale);
+      // 快速筛选：先检查边界框是否与圆形相交
+      const strokeBbox = getStrokeBoundingBox(stroke);
+      
+      if (!isBoundingBoxIntersectingCircle(strokeBbox, canvasPoint, canvasRadius)) {
+        // 边界框不相交，笔触肯定不会被擦除，直接保留
+        newStrokes.push(stroke);
+        continue;
+      }
+      
+      // 边界框相交，进行详细的切割判断
+      const splitResult = splitStrokeAtPoint(stroke, canvasPoint, canvasRadius);
       
       if (splitResult.length === 1 && splitResult[0].id === stroke.id) {
         // Stroke wasn't affected
@@ -209,21 +221,32 @@ export const useWhiteboardStore = create<WhiteboardStore>((set, get) => ({
       y: (p.y - offsetY) / scale,
     }));
     
+    // 优化：先计算套索的边界框
+    const lassoBbox = getPolygonBoundingBox(canvasLassoPoints);
+    
     // Find strokes inside the lasso
     const selectedIds: string[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     
+    // 优化：使用边界框快速筛选，只处理可能与套索相交的笔触
     for (const stroke of canvasState.strokes) {
+      // 快速筛选：先检查边界框是否与套索边界框相交
+      const strokeBbox = getStrokeBoundingBox(stroke);
+      
+      if (!isBoundingBoxIntersecting(strokeBbox, lassoBbox)) {
+        // 边界框不相交，笔触肯定不在套索内，跳过
+        continue;
+      }
+      
+      // 边界框相交，进行详细的多边形包含判断
       if (isStrokeInsideLasso(stroke, canvasLassoPoints)) {
         selectedIds.push(stroke.id);
         
-        // Calculate bounding box
-        for (const point of stroke.points) {
-          minX = Math.min(minX, point.x);
-          minY = Math.min(minY, point.y);
-          maxX = Math.max(maxX, point.x);
-          maxY = Math.max(maxY, point.y);
-        }
+        // Calculate bounding box（使用已计算的边界框，避免重复遍历点）
+        minX = Math.min(minX, strokeBbox.minX);
+        minY = Math.min(minY, strokeBbox.minY);
+        maxX = Math.max(maxX, strokeBbox.maxX);
+        maxY = Math.max(maxY, strokeBbox.maxY);
       }
     }
     
@@ -261,11 +284,14 @@ export const useWhiteboardStore = create<WhiteboardStore>((set, get) => ({
     
     if (selectedStrokeIds.length === 0) return;
     
+    // 优化：使用 Set 进行 O(1) 查找，而不是 O(n) 的 includes
+    const selectedIdsSet = new Set(selectedStrokeIds);
+    
     const scaledDx = dx / scale;
     const scaledDy = dy / scale;
     
     const newStrokes = canvasState.strokes.map(stroke => {
-      if (selectedStrokeIds.includes(stroke.id)) {
+      if (selectedIdsSet.has(stroke.id)) {
         return {
           ...stroke,
           points: stroke.points.map(p => ({
@@ -297,12 +323,15 @@ export const useWhiteboardStore = create<WhiteboardStore>((set, get) => ({
     
     if (selectedStrokeIds.length === 0) return;
     
+    // 优化：使用 Set 进行 O(1) 查找，而不是 O(n) 的 includes
+    const selectedIdsSet = new Set(selectedStrokeIds);
+    
     const newUndoStack = [...undoStack, { ...canvasState }];
     
     set({
       canvasState: {
         ...canvasState,
-        strokes: canvasState.strokes.filter(s => !selectedStrokeIds.includes(s.id)),
+        strokes: canvasState.strokes.filter(s => !selectedIdsSet.has(s.id)),
         selectedStrokeIds: [],
         selectionBox: null,
       },
@@ -461,6 +490,85 @@ export const useWhiteboardStore = create<WhiteboardStore>((set, get) => ({
     });
   },
 }));
+
+// ==================== 优化辅助函数 ====================
+
+// 计算笔触的边界框（Bounding Box）
+interface BoundingBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function getStrokeBoundingBox(stroke: Stroke): BoundingBox {
+  if (stroke.points.length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  for (const point of stroke.points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  
+  // 考虑笔触宽度，扩展边界框
+  const padding = stroke.width / 2;
+  
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    maxX: maxX + padding,
+    maxY: maxY + padding,
+  };
+}
+
+// 判断边界框是否与圆形相交（用于橡皮擦优化）
+function isBoundingBoxIntersectingCircle(bbox: BoundingBox, center: Point, radius: number): boolean {
+  // 找到边界框上距离圆心最近的点
+  const closestX = Math.max(bbox.minX, Math.min(center.x, bbox.maxX));
+  const closestY = Math.max(bbox.minY, Math.min(center.y, bbox.maxY));
+  
+  // 计算最近点到圆心的距离
+  const dx = center.x - closestX;
+  const dy = center.y - closestY;
+  const distanceSquared = dx * dx + dy * dy;
+  
+  return distanceSquared <= radius * radius;
+}
+
+// 计算多边形的边界框（用于套索优化）
+function getPolygonBoundingBox(points: Point[]): BoundingBox {
+  if (points.length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  
+  return { minX, minY, maxX, maxY };
+}
+
+// 判断两个边界框是否相交（用于套索优化）
+function isBoundingBoxIntersecting(bbox1: BoundingBox, bbox2: BoundingBox): boolean {
+  return !(
+    bbox1.maxX < bbox2.minX ||
+    bbox1.minX > bbox2.maxX ||
+    bbox1.maxY < bbox2.minY ||
+    bbox1.minY > bbox2.maxY
+  );
+}
+
+// ==================== 原有辅助函数 ====================
 
 // Helper function: Split stroke at eraser point
 function splitStrokeAtPoint(stroke: Stroke, point: Point, radius: number): Stroke[] {
